@@ -7,15 +7,16 @@ imports
 '''
 
 import os
+import urllib.request
+import zipfile
+
 import numpy as np
 import pandas as pd
+import statsmodels.api as smf
+
 from io import StringIO
 from datetime import datetime
 from scipy import stats
-
-import statsmodels.api as smf
-import urllib.request
-import zipfile
 
 import config
 
@@ -119,7 +120,6 @@ def get_beta(ticker):
 
     (beta, alpha) = model[0:2]
     print("Beta: {} Alpha: {}".format(beta, alpha))
-
 
 def run_factor_regression(ticker, periods=60):
     factors = get_fama_french()
