@@ -1,3 +1,4 @@
 config.py
 resources
 data
+__pycache__/
