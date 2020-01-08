@@ -2,6 +2,10 @@
 bcutrell13@gmail.com - January 2020
 '''
 
+'''
+imports
+'''
+
 import os
 import numpy as np
 import pandas as pd
@@ -13,6 +17,10 @@ import urllib.request
 import zipfile
 
 import config
+
+'''
+objects
+'''
 
 class Portfolio(object):
     '''
@@ -28,12 +36,20 @@ class Portfolio(object):
         self.current = current
         self.tickers = current.keys()
 
+'''
+constants
+'''
+
 DATA_DIR = 'data'
 FAMA_FRENCH_URL = 'https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Research_Data_Factors_CSV.zip'
 FAMA_FRENCH_ZIP = DATA_DIR + '/fama_french.zip'
 FAMA_FRENCH_CSV = DATA_DIR + '/F-F_Research_Data_Factors.csv'
 
 ALPHAVANTAGE_URL = 'https://www.alphavantage.co/query?'
+
+'''
+functions
+'''
 
 def get_fama_french():
     if not os.path.exists(DATA_DIR):
@@ -86,10 +102,15 @@ def get_returns(price_data, period="M"):
 
     return ret_data
 
-factors = get_fama_french()
-prices = get_prices('IVV', config.ALPHAVANTAGE_API_KEY)
-returns = get_returns(prices)
+'''
+main
+'''
 
-print(prices.head())
-print(returns.head())
-print(factors.head())
+if __name__ == '__main__':
+    factors = get_fama_french()
+    prices = get_prices('IVV', config.ALPHAVANTAGE_API_KEY)
+    returns = get_returns(prices)
+
+    print(prices.head())
+    print(returns.head())
+    print(factors.head())
