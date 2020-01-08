@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 from io import StringIO
 from datetime import datetime
+from scipy import stats
 
 import statsmodels.api as smf
 import urllib.request
@@ -92,15 +93,33 @@ def get_prices(ticker):
 
     return df
 
-def get_returns(price_data, period="M"):
-    price = price_data.resample(period).last()
+def get_returns(prices, period="M"):
+    prices = prices.resample(period).last()
 
-    ret_data = price.pct_change()[1:]
-    ret_data = pd.DataFrame(ret_data)
+    returns = prices.pct_change()[1:]
+    returns = pd.DataFrame(returns)
 
-    ret_data.columns = ['portfolio']
+    returns.columns = ['portfolio']
 
-    return ret_data
+    return returns
+
+def get_beta(ticker):
+    prices = get_prices(ticker)
+    port_ret = get_returns(prices)
+
+    benchmark = get_prices('IVV')
+    benchmark_ret = get_returns(benchmark)
+
+    # make sure both return series are using the same dates
+    last_date = max(port_ret.index.min(), benchmark_ret.index.min())
+    port_ret = port_ret[last_date:]
+    benchmark_ret = benchmark_ret[last_date:]
+
+    model = stats.linregress(benchmark_ret.values.flatten(), port_ret.values.flatten())
+
+    (beta, alpha) = model[0:2]
+    print("Beta: {} Alpha: {}".format(beta, alpha))
+
 
 def run_factor_regression(ticker, periods=60):
     factors = get_fama_french()
@@ -125,4 +144,5 @@ main
 
 if __name__ == '__main__':
     print(run_factor_regression('VTV'))
+    get_beta('TSLA')
 
