@@ -75,13 +75,13 @@ def get_fama_french():
 
     return factors
 
-def get_prices(ticker, apikey):
+def get_prices(ticker):
     params = {
         'function': 'TIME_SERIES_DAILY_ADJUSTED',
         'datatype': 'csv',
-        'outputsize': 'compact', # full
+        'outputsize': 'full',
         'symbol': ticker,
-        'apikey': apikey
+        'apikey': config.ALPHAVANTAGE_API_KEY
     }
 
     src_url = ALPHAVANTAGE_URL + urllib.parse.urlencode(params)
@@ -102,15 +102,27 @@ def get_returns(price_data, period="M"):
 
     return ret_data
 
+def run_factor_regression(ticker, periods=60):
+    factors = get_fama_french()
+    factor_last = factors.index[factors.shape[0] - 1].date()
+
+    prices = get_prices(ticker)
+    prices = prices.loc[factor_last:]
+
+    returns = get_returns(prices)
+    returns = returns.tail(periods)
+
+    all_data = pd.merge(returns, factors, how='inner', left_index=True, right_index=True)
+    all_data.rename(columns={ "Mkt-RF": "mkt_excess" }, inplace=True)
+    all_data['port_excess'] = all_data['portfolio'] - all_data['RF']
+
+    model = smf.formula.ols(formula = "port_excess ~ mkt_excess + SMB + HML", data=all_data).fit()
+    return model.params
+
 '''
 main
 '''
 
 if __name__ == '__main__':
-    factors = get_fama_french()
-    prices = get_prices('IVV', config.ALPHAVANTAGE_API_KEY)
-    returns = get_returns(prices)
+    print(run_factor_regression('VTV'))
 
-    print(prices.head())
-    print(returns.head())
-    print(factors.head())
