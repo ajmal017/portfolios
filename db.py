@@ -8,6 +8,7 @@ imports
 
 import os
 import csv
+import code
 import sqlite3
 import config
 import urllib.request
@@ -16,7 +17,7 @@ import pandas as pd
 
 from io import StringIO
 from datetime import datetime
-from portfolios import get_prices
+from portfolios import get_prices, get_batch_prices
 
 '''
 constants
@@ -25,9 +26,12 @@ constants
 FILENAME = 'data.sqlite'
 
 CREATE_TABLES = False
-SEED_DB = True
+
+SEED_DB = False
 SEED_FILE = False
 SEED_DB_FROM_FILE = False
+
+USE_CONSOLE = True
 
 SEED_FILENAME = 'prices.csv'
 SEED_TICKERS = ['A']
@@ -48,7 +52,7 @@ def create_tables(c):
         CREATE TABLE prices (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             security_id INTEGER,
-            timestamp DATETIME NOT NULL,
+            date TEXT NOT NULL,
             adjusted_close DECIMAL(12, 6) NOT NULL,
             FOREIGN KEY (security_id) REFERENCES securities (id)
         );
@@ -63,36 +67,48 @@ def seed_file():
 
     df.to_csv(SEED_FILENAME)
 
-def seed_db_from_file():
-    pass
 
 def seed_db(c):
-    for ticker in tickers:
+    find_security_sql = "SELECT id from securities WHERE ticker=(?)"
+    insert_security_sql = "INSERT INTO securities (ticker) VALUES (?)"
+
+    insert_prices_sql = "INSERT INTO prices (date, adjusted_close, security_id) VALUES (?, ?, ?)"
+
+    for ticker in SEED_TICKERS:
         df = get_prices(ticker)
 
-        # create security row
+        # find or create security row
+        c.execute(find_security_sql, ticker)
+        security_row = c.fetchone() # returns tuple
+
+        if not security_row:
+            c.execute(insert_security_sql, ticker)
+            security_id = c.lastrowid
+        else:
+            security_id = security_row[0]
 
         # create price rows
+        # TODO duplicate handling
+        df.index = df.index.strftime("%Y-%m-%d")
+        to_db = [tuple(record) + (security_id,) for record in df.to_records()]
 
-def get_batch_prices(tickers, merge_df=None):
-    for ticker in tickers:
-        df = get_prices(ticker)
-        df.rename(columns={ 'adjusted_close': ticker }, inplace=True)
+        c.executemany(insert_prices_sql, to_db)
 
-        if merge_df is not None:
-            merge_df = merge_df.merge(df, how='outer', left_index=True, right_index=True)
-        else:
-            merge_df = df
+def seed_db_from_file(c):
+    pass
 
-    return merge_df
 
 '''
 main
 '''
 
+# TODO use CLI args instead of these ridiculous constants
 if __name__ == "__main__":
     conn = sqlite3.connect(FILENAME)
     c = conn.cursor()
+
+    if USE_CONSOLE:
+        code.interact(local=locals())
 
     if CREATE_TABLES:
         create_tables(c)
@@ -108,4 +124,3 @@ if __name__ == "__main__":
 
     conn.commit()
     conn.close()
-
