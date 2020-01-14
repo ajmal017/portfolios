@@ -9,6 +9,8 @@ imports
 import os
 import urllib.request
 import zipfile
+import json
+import time
 
 import numpy as np
 import pandas as pd
@@ -31,9 +33,17 @@ FAMA_FRENCH_CSV = DATA_DIR + '/F-F_Research_Data_Factors.csv'
 
 ALPHAVANTAGE_URL = 'https://www.alphavantage.co/query?'
 
+ALPHAVANTAGE_CALL_LIMIT_NOTE = 'Thank you for using Alpha Vantage! Our standard API call frequency is 5 calls per minute and 500 calls per day. Please visit https://www.alphavantage.co/premium/ if you would like to target a higher API call frequency.'
+
 '''
 objects
 '''
+
+class AlphavantageCallLimitException(Exception):
+    pass
+
+class AlphavantageException(Exception):
+    pass
 
 class Portfolio(object):
     '''
@@ -79,7 +89,7 @@ def get_fama_french():
 
     return factors
 
-def get_prices(ticker):
+def _get_prices(ticker):
     params = {
         'function': 'TIME_SERIES_DAILY_ADJUSTED',
         'datatype': 'csv',
@@ -89,12 +99,32 @@ def get_prices(ticker):
     }
 
     src_url = ALPHAVANTAGE_URL + urllib.parse.urlencode(params)
-    resp_text = urllib.request.urlopen(src_url).read().decode("utf-8")
+    resp = urllib.request.urlopen(src_url)
+    resp_text = resp.read().decode("utf-8")
 
-    df = pd.read_csv(StringIO(resp_text), usecols=['adjusted_close', 'timestamp'], index_col=0)
-    df.index = pd.to_datetime(df.index)
+    try:
+        df = pd.read_csv(StringIO(resp_text), usecols=['adjusted_close', 'timestamp'], index_col=0)
+        df.index = pd.to_datetime(df.index)
+    except:
+        if json.loads(resp_text)['Note'] == ALPHAVANTAGE_CALL_LIMIT_NOTE:
+            raise AlphavantageCallLimitException
 
     return df
+
+def get_prices(ticker):
+    """
+    Get prices from alphavantage API.
+    For now, only handle the per minute call limit error
+    """
+
+    try:
+        return _get_prices(ticker)
+    except AlphavantageCallLimitException:
+        print("Call frequency exceeded, sleeping for 1 minute")
+        time.sleep(60) # wait 1 minute
+        return get_prices(ticker)
+    except Exception as err:
+        print("Failed to get prices from alphavantage: {}".format(err))
 
 def get_batch_prices(tickers, merge_df=None):
     for ticker in tickers:
@@ -109,17 +139,17 @@ def get_batch_prices(tickers, merge_df=None):
     return merge_df
 
 def get_returns(prices, period="M"):
-    prices = prices.resample(period).last()
+    resampled_prices = prices.resample(period).last()
 
-    returns = prices.pct_change()[1:]
+    returns = resampled_prices.pct_change()[1:]
     returns = pd.DataFrame(returns)
 
     returns.columns = ['portfolio']
 
     return returns
 
-def get_beta(ticker):
-    prices = get_prices(ticker)
+def get_beta(prices):
+    prices = prices.dropna()
     port_ret = get_returns(prices)
 
     benchmark = get_prices('IVV')
@@ -132,17 +162,16 @@ def get_beta(ticker):
 
     model = stats.linregress(benchmark_ret.values.flatten(), port_ret.values.flatten())
 
-    (beta, alpha) = model[0:2]
+    (beta, alpha) = [round(val, 2) for val in model[0:2]]
     print("Beta: {} Alpha: {}".format(beta, alpha))
 
     return model
 
-def run_factor_regression(ticker, periods=60):
+def run_factor_regression(prices, periods=60):
     factors = get_fama_french()
     factor_last = factors.index[factors.shape[0] - 1].date()
 
-    prices = get_prices(ticker)
-    prices = prices.loc[factor_last:]
+    prices = prices.loc[:factor_last]
 
     returns = get_returns(prices)
     returns = returns.tail(periods)
@@ -161,26 +190,19 @@ def get_cov_matrix(prices, periods=252):
     return log_ret.cov() * periods # annualized by default
 
 def run_monte_carlo_optimization(prices, simulations=5000):
-    cov_mat = get_cov_matrix(prices)
+    log_ret = np.log(prices/prices.shift(1))
+    cov_mat = log_ret.cov() * 252
     print(cov_mat)
 
-    # Creating an empty array to store portfolio weights
-    all_wts = np.zeros((simulations, len(price_data.columns)))
-
-    # Creating an empty array to store portfolio returns
+    # Creating an empty array to store portfolio weights, returns, risks, and sharpe ratio
+    all_wts = np.zeros((simulations, len(prices.columns)))
     port_returns = np.zeros((simulations))
-
-    # Creating an empty array to store portfolio risks
     port_risk = np.zeros((simulations))
-
-    # Creating an empty array to store portfolio sharpe ratio
     sharpe_ratio = np.zeros((simulations))
 
     for i in range(simulations):
-      wts = np.random.uniform(size = len(price_data.columns))
+      wts = np.random.uniform(size = len(prices.columns))
       wts = wts/np.sum(wts)
-
-      # saving weights in the array
       all_wts[i,:] = wts
 
       # Portfolio Returns
@@ -199,14 +221,21 @@ def run_monte_carlo_optimization(prices, simulations=5000):
       sr = port_ret / port_sd
       sharpe_ratio[i] = sr
 
-    names = price_data.columns
+    names = prices.columns
     min_var = all_wts[port_risk.argmin()]
+    print("Minimum Variance Portfolio")
     print(names)
     print(min_var)
 
+    print("")
+
     max_sr = all_wts[sharpe_ratio.argmax()]
+    print("Maximum Sharpe Portfolio")
     print(names)
     print(max_sr)
+
+def run_sharpe_optimization():
+    pass
 
 
 '''
@@ -215,10 +244,10 @@ main
 
 if __name__ == '__main__':
 
-    tickers = ['AMZN', 'AAPL', 'NFLX', 'XOM', 'T']
+    tickers = ['AMZN', 'NFLX']
     prices = get_batch_prices(tickers)
 
     run_factor_regression(prices['AMZN'])
-    get_beta(prices['TSLA'])
-    run_monte_carlo_optimization(tickers)
+    get_beta(prices['NFLX'])
+    run_monte_carlo_optimization(prices)
 
