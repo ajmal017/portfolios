@@ -19,22 +19,23 @@ from io import StringIO
 from datetime import datetime
 from portfolios import get_prices, get_batch_prices
 
+import argparse
+
 '''
 constants
 '''
 
 FILENAME = 'data.sqlite'
-
-CREATE_TABLES = False
-
-SEED_DB = False
-SEED_FILE = False
-SEED_DB_FROM_FILE = False
-
-USE_CONSOLE = True
-
 SEED_FILENAME = 'prices.csv'
 SEED_TICKERS = ['A']
+
+CREATE_TABLES = 'create_tables'
+SEED_DB = 'seed_db'
+SEED_FILE = 'seed_file'
+SEED_DB_FROM_FILE = 'seed_db_from_file'
+USE_CONSOLE = 'use_console'
+
+COMMANDS = [CREATE_TABLES, SEED_DB, SEED_FILE, SEED_DB_FROM_FILE, USE_CONSOLE]
 
 '''
 functions
@@ -97,30 +98,53 @@ def seed_db(c):
 def seed_db_from_file(c):
     pass
 
-
 '''
 main
 '''
 
-# TODO use CLI args instead of these ridiculous constants
 if __name__ == "__main__":
-    conn = sqlite3.connect(FILENAME)
-    c = conn.cursor()
+    my_parser = argparse.ArgumentParser(fromfile_prefix_chars='@')
+    my_parser.add_argument('command', help='One of {}'.format(', '.join(COMMANDS)))
+    my_parser.add_argument('--tickers', help='A list of tickers to get prices for. Must be comma seperated with no spaces e.g. AAPL,TSLA,JPM')
 
-    if USE_CONSOLE:
-        code.interact(local=locals())
+    args = my_parser.parse_args()
 
-    if CREATE_TABLES:
-        create_tables(c)
+    command = args.command
+    tickers = args.tickers.split(',')
 
-    if SEED_DB:
-        seed_db(c)
+    if command not in COMMANDS:
+        print("Invalid command {}".format(command))
+        exit()
+
+    '''
+    non-db commands
+    '''
 
     if SEED_FILE:
         seed_file()
+        exit()
 
-    if SEED_DB_FROM_FILE:
+    '''
+    db commands
+    '''
+
+    # Start DB
+    conn = sqlite3.connect(FILENAME)
+    c = conn.cursor()
+
+    if command == USE_CONSOLE:
+        code.interact(local=locals())
+
+    elif command == CREATE_TABLES:
+        create_tables(c)
+
+    elif SEED_DB:
+        seed_db(c)
+
+    elif SEED_DB_FROM_FILE:
         seed_db_from_file(c)
 
+    # Stop DB
     conn.commit()
     conn.close()
+
