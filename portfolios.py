@@ -18,7 +18,9 @@ import statsmodels.api as smf
 
 from io import StringIO
 from datetime import datetime
+
 from scipy import stats
+from scipy.optimize import minimize
 
 import config
 
@@ -185,13 +187,15 @@ def run_factor_regression(prices, periods=60):
 
     return model
 
-def get_cov_matrix(prices, periods=252):
-    log_ret = np.log(prices/prices.shift(1))
+def get_cov_matrix(log_ret, periods=252):
     return log_ret.cov() * periods # annualized by default
 
+def get_log_returns(prices):
+    return np.log(prices/prices.shift(1))
+
 def run_monte_carlo_optimization(prices, simulations=5000):
-    log_ret = np.log(prices/prices.shift(1))
-    cov_mat = log_ret.cov() * 252
+    log_ret = get_log_returns(prices)
+    cov_mat = get_cov_matrix(log_ret)
     print(cov_mat)
 
     # Creating an empty array to store portfolio weights, returns, risks, and sharpe ratio
@@ -234,8 +238,44 @@ def run_monte_carlo_optimization(prices, simulations=5000):
     print(names)
     print(max_sr)
 
-def run_sharpe_optimization():
+
+def min_tracking_error():
     pass
+
+def check_sum(weights):
+    return np.sum(weights) - 1
+
+def run_sharpe_optimization(prices):
+    num_secs = len(prices.columns)
+
+    log_ret = get_log_returns(prices)
+    weights = np.array(np.random.random(num_secs))
+
+    def get_ret_vol_sr(weights):
+        """
+        Takes in weights, returns array or return, volatility, sharpe ratio
+        """
+        weights = np.array(weights)
+        ret = np.sum(log_ret.mean() * weights) * 252
+        vol = np.sqrt(np.dot(weights.T, np.dot(log_ret.cov() * 252, weights)))
+        sr = ret/vol
+        return np.array([ret,vol,sr])
+
+    def neg_sharpe(weights):
+        return get_ret_vol_sr(weights)[2] * -1
+
+    # create (0,1) bounds for each security
+    bounds = tuple([ (0,1) for _ in range(num_secs)])
+
+    # guess an equal weighted portfolio
+    init_guess = [ 1/num_secs ] * num_secs
+
+    # By convention of minimize function it should be a function that returns zero for conditions
+    cons = ({'type':'eq','fun': check_sum})
+    opt_results = minimize(neg_sharpe, init_guess, method='SLSQP', bounds=bounds, constraints=cons)
+
+    print(opt_results)
+    print(opt_results.x)
 
 
 '''
@@ -247,7 +287,11 @@ if __name__ == '__main__':
     tickers = ['AMZN', 'NFLX']
     prices = get_batch_prices(tickers)
 
+    run_sharpe_optimization(prices)
+
     run_factor_regression(prices['AMZN'])
+
     get_beta(prices['NFLX'])
+
     run_monte_carlo_optimization(prices)
 
